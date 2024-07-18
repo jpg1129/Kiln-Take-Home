@@ -43,47 +43,40 @@ def fetch_page(api_url, params, headers):
         print(f" {response.status_code} Error: Failed to fetch data from {api_url}")
     return None
 
-def fetch_all_pages(api_url, params, headers, output_csv): 
-    payload = fetch_page(api_url, params, headers)
-    total_pages = payload["pagination"].get("total_pages", 0)
-    page_size = payload["pagination"].get("page_size", 0)
-    if total_pages == 0 or page_size == 0:
-        print(f"Error: Failed to fetch data from {api_url}")
-        return 
+
+def iterate_pages(df, api_url, params, headers):
+    curr_page = 1
+    total_pages= 1
+    while (curr_page <= total_pages):
+        print(curr_page) 
+        try:
+            response = requests.get(api_url, params={**params, "current_page": curr_page}, headers=headers)
+            if response.status_code == 200:
+                res = response.json()
+                page_df = pd.DataFrame(res["data"])
+                df = pd.concat([df, page_df], ignore_index=True)
+                total_pages = res["pagination"].get("total_pages", 1)
+                if curr_page >= total_pages:
+                    break
+                curr_page += 1
+        except Exception as e:
+            print(f"Error: Failed to fetch data from {api_url}?current_page={curr_page}")
+            return e
+    return df
+
+
+def fetch_all_kiln_validators(api_url, params, headers, output_csv): 
     df = pd.DataFrame(columns=EXAMPLE_API_VAL.keys())
-    df = pd.concat([df, pd.DataFrame(payload["data"])]) 
-    for page in range(2, total_pages+1): 
-        response = requests.get(api_url, params={"scope": params["scope"], "current_page": page, "page_size": params["page_size"]}, headers=headers)
-        if response.status_code == 200:
-            res = response.json()
-            page_df = pd.DataFrame(res["data"])
-            df = pd.concat([df, page_df], ignore_index=True)
-            if len(page_df) < int(page_size):
-               break 
-        else:
-            print(f" {response.status_code} Error: Failed to fetch data from {api_url}?current_page={page}")
-            break 
+    iterate_pages(df, api_url, params, headers)
+    df = df[df["is_kiln"] == True]
     df.to_csv(output_csv, index=False)
     print(f"Data fetched from {api_url} and saved to {output_csv}")
     return df
     
 
-def fetch_all_non_kiln_validators(api_url, params, headers, output_csv, total_pages):
-    payload = fetch_page(api_url, params, headers)
+def fetch_all_non_kiln_validators(api_url, params, headers, output_csv):
     df = pd.DataFrame(columns=EXAMPLE_API_VAL.keys())
-    df = pd.concat([df, pd.DataFrame(payload["data"])]) 
-    for page in range(2, total_pages+1): 
-        print(f"Fetching page {page} of {total_pages}")
-        response = requests.get(api_url, params={"scope": params["scope"], "current_page": page, "page_size": params["page_size"]}, headers=headers)
-        if response.status_code == 200:
-            res = response.json()
-            page_df = pd.DataFrame(res["data"])
-            df = pd.concat([df, page_df], ignore_index=True)
-            if len(page_df) < params["page_size"]:
-               break 
-        else:
-            print(f" {response.status_code} Error: Failed to fetch data from {api_url}?current_page={page}")
-            break 
+    df = iterate_pages(df, api_url, params, headers)
     df = df[df["is_kiln"] == False]
     df.to_csv(output_csv, index=False)
     print(f"Data fetched from {api_url} and saved to {output_csv}")
